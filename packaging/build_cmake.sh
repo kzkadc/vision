@@ -15,13 +15,13 @@ script_dir="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
 . "$script_dir/pkg_helpers.bash"
 
 export BUILD_TYPE=conda
-setup_env 0.13.0
+setup_env 0.14.0
 export SOURCE_ROOT_DIR="$PWD"
 setup_conda_pytorch_constraint
 setup_conda_cudatoolkit_plain_constraint
 
 if [[ "$OSTYPE" == "msys" ]]; then
-    conda install -yq conda-build cmake "pillow>=5.3.0,!=8.3.*" future
+    conda install -yq conda-build cmake future
     pip install dataclasses
 fi
 
