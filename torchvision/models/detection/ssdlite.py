@@ -10,10 +10,10 @@ from ...ops.misc import Conv2dNormActivation
 from ...transforms._presets import ObjectDetection
 from ...utils import _log_api_usage_once
 from .. import mobilenet
-from .._api import WeightsEnum, Weights
+from .._api import register_model, Weights, WeightsEnum
 from .._meta import _COCO_CATEGORIES
-from .._utils import handle_legacy_interface, _ovewrite_value_param
-from ..mobilenetv3 import MobileNet_V3_Large_Weights, mobilenet_v3_large
+from .._utils import _ovewrite_value_param, handle_legacy_interface
+from ..mobilenetv3 import mobilenet_v3_large, MobileNet_V3_Large_Weights
 from . import _utils as det_utils
 from .anchor_utils import DefaultBoxGenerator
 from .backbone_utils import _validate_trainable_layers
@@ -172,7 +172,7 @@ def _mobilenet_extractor(
     stage_indices = [0] + [i for i, b in enumerate(backbone) if getattr(b, "_is_cn", False)] + [len(backbone) - 1]
     num_stages = len(stage_indices)
 
-    # find the index of the layer from which we wont freeze
+    # find the index of the layer from which we won't freeze
     if not 0 <= trainable_layers <= num_stages:
         raise ValueError("trainable_layers should be in the range [0, {num_stages}], instead got {trainable_layers}")
     freeze_before = len(backbone) if trainable_layers == 0 else stage_indices[num_stages - trainable_layers]
@@ -198,12 +198,15 @@ class SSDLite320_MobileNet_V3_Large_Weights(WeightsEnum):
                     "box_map": 21.3,
                 }
             },
+            "_ops": 0.583,
+            "_file_size": 13.418,
             "_docs": """These weights were produced by following a similar training recipe as on the paper.""",
         },
     )
     DEFAULT = COCO_V1
 
 
+@register_model()
 @handle_legacy_interface(
     weights=("pretrained", SSDLite320_MobileNet_V3_Large_Weights.COCO_V1),
     weights_backbone=("pretrained_backbone", MobileNet_V3_Large_Weights.IMAGENET1K_V1),
@@ -267,7 +270,7 @@ def ssdlite320_mobilenet_v3_large(
 
     if weights is not None:
         weights_backbone = None
-        num_classes = _ovewrite_value_param(num_classes, len(weights.meta["categories"]))
+        num_classes = _ovewrite_value_param("num_classes", num_classes, len(weights.meta["categories"]))
     elif num_classes is None:
         num_classes = 91
 
@@ -323,17 +326,6 @@ def ssdlite320_mobilenet_v3_large(
     )
 
     if weights is not None:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
-
-
-# The dictionary below is internal implementation detail and will be removed in v0.15
-from .._utils import _ModelURLs
-
-
-model_urls = _ModelURLs(
-    {
-        "ssdlite320_mobilenet_v3_large_coco": SSDLite320_MobileNet_V3_Large_Weights.COCO_V1.url,
-    }
-)

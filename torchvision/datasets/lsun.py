@@ -7,7 +7,7 @@ from typing import Any, Callable, cast, List, Optional, Tuple, Union
 
 from PIL import Image
 
-from .utils import verify_str_arg, iterable_to_str
+from .utils import iterable_to_str, verify_str_arg
 from .vision import VisionDataset
 
 
@@ -63,7 +63,7 @@ class LSUN(VisionDataset):
         root (string): Root directory for the database files.
         classes (string or list): One of {'train', 'val', 'test'} or a list of
             categories to load. e,g. ['bedroom_train', 'church_outdoor_train'].
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.

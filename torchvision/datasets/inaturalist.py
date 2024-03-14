@@ -1,6 +1,6 @@
 import os
 import os.path
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 from PIL import Image
 
@@ -54,7 +54,7 @@ class INaturalist(VisionDataset):
 
             Can also be a list to output a tuple with all specified target types.
             Defaults to ``full``.
-        transform (callable, optional): A function/transform that takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.

@@ -1,8 +1,7 @@
 import os
 import os.path
 import pathlib
-from typing import Any, Callable, Optional, Union, Tuple
-from typing import Sequence
+from typing import Any, Callable, Optional, Sequence, Tuple, Union
 
 from PIL import Image
 
@@ -24,7 +23,7 @@ class OxfordIIITPet(VisionDataset):
 
             If empty, ``None`` will be returned as target.
 
-        transform (callable, optional): A function/transform that  takes in a PIL image and returns a transformed
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``.
         target_transform (callable, optional): A function/transform that takes in the target and transforms it.
         download (bool, optional): If True, downloads the dataset from the internet and puts it into

@@ -2,18 +2,11 @@ import pathlib
 from typing import Any, Dict, List, Tuple, Union
 
 import torch
-from torchdata.datapipes.iter import (
-    IterDataPipe,
-    Mapper,
-    CSVParser,
-)
-from torchvision.prototype.datasets.utils import (
-    Dataset,
-    HttpResource,
-    OnlineResource,
-)
+from torchdata.datapipes.iter import CSVParser, IterDataPipe, Mapper
+from torchvision.prototype.datasets.utils import Dataset, HttpResource, OnlineResource
 from torchvision.prototype.datasets.utils._internal import hint_sharding, hint_shuffling
-from torchvision.prototype.features import Image, OneHotLabel
+from torchvision.prototype.tv_tensors import OneHotLabel
+from torchvision.tv_tensors import Image
 
 from .._api import register_dataset, register_info
 

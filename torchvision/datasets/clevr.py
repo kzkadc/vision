@@ -1,6 +1,6 @@
 import json
 import pathlib
-from typing import Any, Callable, Optional, Tuple, List
+from typing import Any, Callable, List, Optional, Tuple
 from urllib.parse import urlparse
 
 from PIL import Image
@@ -18,7 +18,7 @@ class CLEVRClassification(VisionDataset):
         root (string): Root directory of dataset where directory ``root/clevr`` exists or will be saved to if download is
             set to True.
         split (string, optional): The dataset split, supports ``"train"`` (default), ``"val"``, or ``"test"``.
-        transform (callable, optional): A function/transform that takes in an PIL image and returns a transformed
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in them target and transforms it.
         download (bool, optional): If true, downloads the dataset from the internet and puts it in root directory. If

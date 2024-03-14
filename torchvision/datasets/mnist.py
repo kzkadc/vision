@@ -12,7 +12,7 @@ import numpy as np
 import torch
 from PIL import Image
 
-from .utils import download_and_extract_archive, extract_archive, verify_str_arg, check_integrity
+from .utils import _flip_byte_order, check_integrity, download_and_extract_archive, extract_archive, verify_str_arg
 from .vision import VisionDataset
 
 
@@ -27,7 +27,7 @@ class MNIST(VisionDataset):
         download (bool, optional): If True, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that  takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -116,7 +116,7 @@ class MNIST(VisionDataset):
         # This is for BC only. We no longer cache the data in a custom binary, but simply read from the raw data
         # directly.
         data_file = self.training_file if self.train else self.test_file
-        return torch.load(os.path.join(self.processed_folder, data_file))
+        return torch.load(os.path.join(self.processed_folder, data_file), weights_only=True)
 
     def _load_data(self):
         image_file = f"{'train' if self.train else 't10k'}-images-idx3-ubyte"
@@ -210,7 +210,7 @@ class FashionMNIST(MNIST):
         download (bool, optional): If True, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that  takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -238,7 +238,7 @@ class KMNIST(MNIST):
         download (bool, optional): If True, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that  takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -269,7 +269,7 @@ class EMNIST(MNIST):
         download (bool, optional): If True, downloads the dataset from the internet and
             puts it in root directory. If dataset is already downloaded, it is not
             downloaded again.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that  takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -360,13 +360,13 @@ class QMNIST(MNIST):
             the internet and puts it in root directory. If dataset is
             already downloaded, it is not downloaded again.
         transform (callable, optional): A function/transform that
-            takes in an PIL image and returns a transformed
+            takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform
             that takes in the target and transforms it.
         train (bool,optional,compatibility): When argument 'what' is
             not specified, this boolean decides whether to load the
-            training set ot the testing set.  Default: True.
+            training set or the testing set.  Default: True.
     """
 
     subsets = {"train": "train", "test": "test", "test10k": "test", "test50k": "test", "nist": "nist"}
@@ -510,22 +510,31 @@ def read_sn3_pascalvincent_tensor(path: str, strict: bool = True) -> torch.Tenso
     # read
     with open(path, "rb") as f:
         data = f.read()
+
     # parse
-    magic = get_int(data[0:4])
-    nd = magic % 256
-    ty = magic // 256
+    if sys.byteorder == "little":
+        magic = get_int(data[0:4])
+        nd = magic % 256
+        ty = magic // 256
+    else:
+        nd = get_int(data[0:1])
+        ty = get_int(data[1:2]) + get_int(data[2:3]) * 256 + get_int(data[3:4]) * 256 * 256
+
     assert 1 <= nd <= 3
     assert 8 <= ty <= 14
     torch_type = SN3_PASCALVINCENT_TYPEMAP[ty]
     s = [get_int(data[4 * (i + 1) : 4 * (i + 2)]) for i in range(nd)]
 
-    num_bytes_per_value = torch.iinfo(torch_type).bits // 8
-    # The MNIST format uses the big endian byte order. If the system uses little endian byte order by default,
-    # we need to reverse the bytes before we can read them with torch.frombuffer().
-    needs_byte_reversal = sys.byteorder == "little" and num_bytes_per_value > 1
+    if sys.byteorder == "big":
+        for i in range(len(s)):
+            s[i] = int.from_bytes(s[i].to_bytes(4, byteorder="little"), byteorder="big", signed=False)
+
     parsed = torch.frombuffer(bytearray(data), dtype=torch_type, offset=(4 * (nd + 1)))
-    if needs_byte_reversal:
-        parsed = parsed.flip(0)
+
+    # The MNIST format uses the big endian byte order, while `torch.frombuffer` uses whatever the system uses. In case
+    # that is little endian and the dtype has more than one byte, we need to flip them.
+    if sys.byteorder == "little" and parsed.element_size() > 1:
+        parsed = _flip_byte_order(parsed)
 
     assert parsed.shape[0] == np.prod(s) or not strict
     return parsed.view(*s)

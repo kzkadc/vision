@@ -8,9 +8,9 @@ from torch import Tensor
 
 from ..transforms._presets import ImageClassification
 from ..utils import _log_api_usage_once
-from ._api import WeightsEnum, Weights
+from ._api import register_model, Weights, WeightsEnum
 from ._meta import _IMAGENET_CATEGORIES
-from ._utils import handle_legacy_interface, _ovewrite_named_param
+from ._utils import _ovewrite_named_param, handle_legacy_interface
 
 
 __all__ = [
@@ -88,14 +88,14 @@ def _round_to_multiple_of(val: float, divisor: int, round_up_bias: float = 0.9) 
 
 
 def _get_depths(alpha: float) -> List[int]:
-    """Scales tensor depths as in reference MobileNet code, prefers rouding up
+    """Scales tensor depths as in reference MobileNet code, prefers rounding up
     rather than down."""
     depths = [32, 16, 24, 40, 80, 96, 192, 320]
     return [_round_to_multiple_of(depth * alpha, 8) for depth in depths]
 
 
 class MNASNet(torch.nn.Module):
-    """MNASNet, as described in https://arxiv.org/pdf/1807.11626.pdf. This
+    """MNASNet, as described in https://arxiv.org/abs/1807.11626. This
     implements the B1 variant of the model.
     >>> model = MNASNet(1.0, num_classes=1000)
     >>> x = torch.rand(1, 3, 224, 224)
@@ -231,6 +231,8 @@ class MNASNet0_5_Weights(WeightsEnum):
                     "acc@5": 87.490,
                 }
             },
+            "_ops": 0.104,
+            "_file_size": 8.591,
             "_docs": """These weights reproduce closely the results of the paper.""",
         },
     )
@@ -251,6 +253,8 @@ class MNASNet0_75_Weights(WeightsEnum):
                     "acc@5": 90.496,
                 }
             },
+            "_ops": 0.215,
+            "_file_size": 12.303,
             "_docs": """
                 These weights were trained from scratch by using TorchVision's `new training recipe
                 <https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/>`_.
@@ -273,6 +277,8 @@ class MNASNet1_0_Weights(WeightsEnum):
                     "acc@5": 91.510,
                 }
             },
+            "_ops": 0.314,
+            "_file_size": 16.915,
             "_docs": """These weights reproduce closely the results of the paper.""",
         },
     )
@@ -293,6 +299,8 @@ class MNASNet1_3_Weights(WeightsEnum):
                     "acc@5": 93.522,
                 }
             },
+            "_ops": 0.526,
+            "_file_size": 24.246,
             "_docs": """
                 These weights were trained from scratch by using TorchVision's `new training recipe
                 <https://pytorch.org/blog/how-to-train-state-of-the-art-models-using-torchvision-latest-primitives/>`_.
@@ -309,16 +317,17 @@ def _mnasnet(alpha: float, weights: Optional[WeightsEnum], progress: bool, **kwa
     model = MNASNet(alpha, **kwargs)
 
     if weights:
-        model.load_state_dict(weights.get_state_dict(progress=progress))
+        model.load_state_dict(weights.get_state_dict(progress=progress, check_hash=True))
 
     return model
 
 
+@register_model()
 @handle_legacy_interface(weights=("pretrained", MNASNet0_5_Weights.IMAGENET1K_V1))
 def mnasnet0_5(*, weights: Optional[MNASNet0_5_Weights] = None, progress: bool = True, **kwargs: Any) -> MNASNet:
     """MNASNet with depth multiplier of 0.5 from
     `MnasNet: Platform-Aware Neural Architecture Search for Mobile
-    <https://arxiv.org/pdf/1807.11626.pdf>`_ paper.
+    <https://arxiv.org/abs/1807.11626>`_ paper.
 
     Args:
         weights (:class:`~torchvision.models.MNASNet0_5_Weights`, optional): The
@@ -341,11 +350,12 @@ def mnasnet0_5(*, weights: Optional[MNASNet0_5_Weights] = None, progress: bool =
     return _mnasnet(0.5, weights, progress, **kwargs)
 
 
+@register_model()
 @handle_legacy_interface(weights=("pretrained", MNASNet0_75_Weights.IMAGENET1K_V1))
 def mnasnet0_75(*, weights: Optional[MNASNet0_75_Weights] = None, progress: bool = True, **kwargs: Any) -> MNASNet:
     """MNASNet with depth multiplier of 0.75 from
     `MnasNet: Platform-Aware Neural Architecture Search for Mobile
-    <https://arxiv.org/pdf/1807.11626.pdf>`_ paper.
+    <https://arxiv.org/abs/1807.11626>`_ paper.
 
     Args:
         weights (:class:`~torchvision.models.MNASNet0_75_Weights`, optional): The
@@ -368,11 +378,12 @@ def mnasnet0_75(*, weights: Optional[MNASNet0_75_Weights] = None, progress: bool
     return _mnasnet(0.75, weights, progress, **kwargs)
 
 
+@register_model()
 @handle_legacy_interface(weights=("pretrained", MNASNet1_0_Weights.IMAGENET1K_V1))
 def mnasnet1_0(*, weights: Optional[MNASNet1_0_Weights] = None, progress: bool = True, **kwargs: Any) -> MNASNet:
     """MNASNet with depth multiplier of 1.0 from
     `MnasNet: Platform-Aware Neural Architecture Search for Mobile
-    <https://arxiv.org/pdf/1807.11626.pdf>`_ paper.
+    <https://arxiv.org/abs/1807.11626>`_ paper.
 
     Args:
         weights (:class:`~torchvision.models.MNASNet1_0_Weights`, optional): The
@@ -395,11 +406,12 @@ def mnasnet1_0(*, weights: Optional[MNASNet1_0_Weights] = None, progress: bool =
     return _mnasnet(1.0, weights, progress, **kwargs)
 
 
+@register_model()
 @handle_legacy_interface(weights=("pretrained", MNASNet1_3_Weights.IMAGENET1K_V1))
 def mnasnet1_3(*, weights: Optional[MNASNet1_3_Weights] = None, progress: bool = True, **kwargs: Any) -> MNASNet:
     """MNASNet with depth multiplier of 1.3 from
     `MnasNet: Platform-Aware Neural Architecture Search for Mobile
-    <https://arxiv.org/pdf/1807.11626.pdf>`_ paper.
+    <https://arxiv.org/abs/1807.11626>`_ paper.
 
     Args:
         weights (:class:`~torchvision.models.MNASNet1_3_Weights`, optional): The

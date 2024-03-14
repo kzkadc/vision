@@ -2,7 +2,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .folder import ImageFolder
-from .utils import verify_str_arg, download_and_extract_archive
+from .utils import download_and_extract_archive, verify_str_arg
 
 
 class Country211(ImageFolder):
@@ -11,12 +11,12 @@ class Country211(ImageFolder):
     This dataset was built by filtering the images from the YFCC100m dataset
     that have GPS coordinate corresponding to a ISO-3166 country code. The
     dataset is balanced by sampling 150 train images, 50 validation images, and
-    100 test images images for each country.
+    100 test images for each country.
 
     Args:
         root (string): Root directory of the dataset.
         split (string, optional): The dataset split, supports ``"train"`` (default), ``"valid"`` and ``"test"``.
-        transform (callable, optional): A function/transform that  takes in an PIL image and returns a transformed
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``.
         target_transform (callable, optional): A function/transform that takes in the target and transforms it.
         download (bool, optional): If True, downloads the dataset from the internet and puts it into

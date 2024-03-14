@@ -17,7 +17,7 @@ class CIFAR10(VisionDataset):
             ``cifar-10-batches-py`` exists or will be saved to if download is set to True.
         train (bool, optional): If True, creates dataset from training set, otherwise
             creates from test set.
-        transform (callable, optional): A function/transform that takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -126,10 +126,8 @@ class CIFAR10(VisionDataset):
         return len(self.data)
 
     def _check_integrity(self) -> bool:
-        root = self.root
-        for fentry in self.train_list + self.test_list:
-            filename, md5 = fentry[0], fentry[1]
-            fpath = os.path.join(root, self.base_folder, filename)
+        for filename, md5 in self.train_list + self.test_list:
+            fpath = os.path.join(self.root, self.base_folder, filename)
             if not check_integrity(fpath, md5):
                 return False
         return True

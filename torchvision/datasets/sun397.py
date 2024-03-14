@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Any, Tuple, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
 
 import PIL.Image
 
@@ -15,7 +15,7 @@ class SUN397(VisionDataset):
 
     Args:
         root (string): Root directory of the dataset.
-        transform (callable, optional): A function/transform that  takes in an PIL image and returns a transformed
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``.
         target_transform (callable, optional): A function/transform that takes in the target and transforms it.
         download (bool, optional): If true, downloads the dataset from the internet and
@@ -55,7 +55,7 @@ class SUN397(VisionDataset):
     def __len__(self) -> int:
         return len(self._image_files)
 
-    def __getitem__(self, idx) -> Tuple[Any, Any]:
+    def __getitem__(self, idx: int) -> Tuple[Any, Any]:
         image_file, label = self._image_files[idx], self._labels[idx]
         image = PIL.Image.open(image_file).convert("RGB")
 

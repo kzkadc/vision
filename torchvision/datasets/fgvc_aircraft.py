@@ -28,7 +28,7 @@ class FGVCAircraft(VisionDataset):
             ``trainval`` and ``test``.
         annotation_level (str, optional): The annotation level, supports ``variant``,
             ``family`` and ``manufacturer``.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -90,7 +90,7 @@ class FGVCAircraft(VisionDataset):
     def __len__(self) -> int:
         return len(self._image_files)
 
-    def __getitem__(self, idx) -> Tuple[Any, Any]:
+    def __getitem__(self, idx: int) -> Tuple[Any, Any]:
         image_file, label = self._image_files[idx], self._labels[idx]
         image = PIL.Image.open(image_file).convert("RGB")
 

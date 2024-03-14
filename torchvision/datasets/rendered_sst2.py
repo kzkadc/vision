@@ -1,10 +1,10 @@
 from pathlib import Path
-from typing import Any, Tuple, Callable, Optional
+from typing import Any, Callable, Optional, Tuple
 
 import PIL.Image
 
 from .folder import make_dataset
-from .utils import verify_str_arg, download_and_extract_archive
+from .utils import download_and_extract_archive, verify_str_arg
 from .vision import VisionDataset
 
 
@@ -22,7 +22,7 @@ class RenderedSST2(VisionDataset):
     Args:
         root (string): Root directory of the dataset.
         split (string, optional): The dataset split, supports ``"train"`` (default), `"val"` and ``"test"``.
-        transform (callable, optional): A function/transform that  takes in an PIL image and returns a transformed
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``.
         target_transform (callable, optional): A function/transform that takes in the target and transforms it.
         download (bool, optional): If True, downloads the dataset from the internet and
@@ -59,7 +59,7 @@ class RenderedSST2(VisionDataset):
     def __len__(self) -> int:
         return len(self._samples)
 
-    def __getitem__(self, idx) -> Tuple[Any, Any]:
+    def __getitem__(self, idx: int) -> Tuple[Any, Any]:
         image_file, label = self._samples[idx]
         image = PIL.Image.open(image_file).convert("RGB")
 

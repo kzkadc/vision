@@ -3,7 +3,7 @@ from typing import Any, Callable, Optional, Tuple
 
 from PIL import Image
 
-from .utils import download_file_from_google_drive, _decompress, verify_str_arg
+from .utils import _decompress, download_file_from_google_drive, verify_str_arg
 from .vision import VisionDataset
 
 
@@ -20,11 +20,15 @@ class PCAM(VisionDataset):
     Args:
          root (string): Root directory of the dataset.
          split (string, optional): The dataset split, supports ``"train"`` (default), ``"test"`` or ``"val"``.
-         transform (callable, optional): A function/transform that  takes in a PIL image and returns a transformed
+         transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
              version. E.g, ``transforms.RandomCrop``.
          target_transform (callable, optional): A function/transform that takes in the target and transforms it.
          download (bool, optional): If True, downloads the dataset from the internet and puts it into ``root/pcam``. If
              dataset is already downloaded, it is not downloaded again.
+
+             .. warning::
+
+                To download the dataset `gdown <https://github.com/wkentaro/gdown>`_ is required.
     """
 
     _FILES = {
@@ -44,24 +48,24 @@ class PCAM(VisionDataset):
             "images": (
                 "camelyonpatch_level_2_split_test_x.h5",
                 "1qV65ZqZvWzuIVthK8eVDhIwrbnsJdbg_",
-                "d5b63470df7cfa627aeec8b9dc0c066e",
+                "d8c2d60d490dbd479f8199bdfa0cf6ec",
             ),
             "targets": (
                 "camelyonpatch_level_2_split_test_y.h5",
                 "17BHrSrwWKjYsOgTMmoqrIjDy6Fa2o_gP",
-                "2b85f58b927af9964a4c15b8f7e8f179",
+                "60a7035772fbdb7f34eb86d4420cf66a",
             ),
         },
         "val": {
             "images": (
                 "camelyonpatch_level_2_split_valid_x.h5",
                 "1hgshYGWK8V-eGRy8LToWJJgDU_rXWVJ3",
-                "d8c2d60d490dbd479f8199bdfa0cf6ec",
+                "d5b63470df7cfa627aeec8b9dc0c066e",
             ),
             "targets": (
                 "camelyonpatch_level_2_split_valid_y.h5",
                 "1bH8ZRbhSVAhScTS0p9-ZzGnX91cHT3uO",
-                "60a7035772fbdb7f34eb86d4420cf66a",
+                "2b85f58b927af9964a4c15b8f7e8f179",
             ),
         },
     }

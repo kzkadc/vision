@@ -3,7 +3,7 @@ from typing import Any, Callable, List, Optional, Tuple
 
 from PIL import Image
 
-from .utils import download_and_extract_archive, check_integrity, list_dir, list_files
+from .utils import check_integrity, download_and_extract_archive, list_dir, list_files
 from .vision import VisionDataset
 
 
@@ -15,7 +15,7 @@ class Omniglot(VisionDataset):
             ``omniglot-py`` exists.
         background (bool, optional): If True, creates dataset from the "background" set, otherwise
             creates from the "evaluation" set. This terminology is defined by the authors.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.

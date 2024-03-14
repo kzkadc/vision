@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional, Tuple
 import numpy as np
 from PIL import Image
 
-from .utils import download_url, check_integrity
+from .utils import check_integrity, download_url
 from .vision import VisionDataset
 
 
@@ -14,7 +14,7 @@ class SEMEION(VisionDataset):
     Args:
         root (string): Root directory of dataset where directory
             ``semeion.py`` exists.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.RandomCrop``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.

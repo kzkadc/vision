@@ -1,10 +1,10 @@
 import os
 import pathlib
-from typing import Optional, Callable
+from typing import Any, Callable, Optional, Tuple
 
 import PIL.Image
 
-from .utils import verify_str_arg, download_and_extract_archive
+from .utils import download_and_extract_archive, verify_str_arg
 from .vision import VisionDataset
 
 
@@ -21,7 +21,7 @@ class DTD(VisionDataset):
                 The partition only changes which split each image belongs to. Thus, regardless of the selected
                 partition, combining all splits will result in all images.
 
-        transform (callable, optional): A function/transform that  takes in a PIL image and returns a transformed
+        transform (callable, optional): A function/transform that takes in a PIL image and returns a transformed
             version. E.g, ``transforms.RandomCrop``.
         target_transform (callable, optional): A function/transform that takes in the target and transforms it.
         download (bool, optional): If True, downloads the dataset from the internet and
@@ -76,7 +76,7 @@ class DTD(VisionDataset):
     def __len__(self) -> int:
         return len(self._image_files)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx: int) -> Tuple[Any, Any]:
         image_file, label = self._image_files[idx], self._labels[idx]
         image = PIL.Image.open(image_file).convert("RGB")
 

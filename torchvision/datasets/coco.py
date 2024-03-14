@@ -1,5 +1,5 @@
 import os.path
-from typing import Any, Callable, Optional, Tuple, List
+from typing import Any, Callable, List, Optional, Tuple
 
 from PIL import Image
 
@@ -14,7 +14,7 @@ class CocoDetection(VisionDataset):
     Args:
         root (string): Root directory where images are downloaded to.
         annFile (string): Path to json annotation file.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that takes in a PIL image
             and returns a transformed version. E.g, ``transforms.PILToTensor``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.
@@ -44,6 +44,10 @@ class CocoDetection(VisionDataset):
         return self.coco.loadAnns(self.coco.getAnnIds(id))
 
     def __getitem__(self, index: int) -> Tuple[Any, Any]:
+
+        if not isinstance(index, int):
+            raise ValueError(f"Index must be of type integer, got {type(index)} instead.")
+
         id = self.ids[index]
         image = self._load_image(id)
         target = self._load_target(id)
@@ -65,7 +69,7 @@ class CocoCaptions(CocoDetection):
     Args:
         root (string): Root directory where images are downloaded to.
         annFile (string): Path to json annotation file.
-        transform (callable, optional): A function/transform that  takes in an PIL image
+        transform (callable, optional): A function/transform that  takes in a PIL image
             and returns a transformed version. E.g, ``transforms.PILToTensor``
         target_transform (callable, optional): A function/transform that takes in the
             target and transforms it.

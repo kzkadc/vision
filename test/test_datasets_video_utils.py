@@ -1,8 +1,8 @@
 import pytest
 import torch
-from common_utils import get_list_of_videos, assert_equal
+from common_utils import assert_equal, get_list_of_videos
 from torchvision import io
-from torchvision.datasets.video_utils import VideoClips, unfold
+from torchvision.datasets.video_utils import unfold, VideoClips
 
 
 class TestVideo:
@@ -60,7 +60,7 @@ class TestVideo:
         video_list = get_list_of_videos(tmpdir, num_videos=3, sizes=[12, 12, 12], fps=[3, 4, 6])
         num_frames = 4
         for fps in [1, 3, 4, 10]:
-            video_clips = VideoClips(video_list, num_frames, num_frames, fps, num_workers=2)
+            video_clips = VideoClips(video_list, num_frames, num_frames, fps)
             for i in range(video_clips.num_clips()):
                 video, audio, info, video_idx = video_clips.get_clip(i)
                 assert video.shape[0] == num_frames
