@@ -40,7 +40,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-12
           - runner: macos-m1-stable
       fail-fast: false
     uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
@@ -55,7 +54,7 @@ jobs:
         export GPU_ARCH_TYPE=cpu
         export GPU_ARCH_VERSION=''
 
-        ./.github/scripts/cmake.sh
+        ${CONDA_RUN} ./.github/scripts/cmake.sh
 
   windows:
     strategy:
