@@ -4,6 +4,7 @@ import io
 import os
 import re
 import sys
+from contextlib import nullcontext
 from pathlib import Path
 
 import numpy as np
@@ -13,11 +14,15 @@ import torch
 import torchvision.transforms.v2.functional as F
 from common_utils import assert_equal, cpu_and_cuda, IN_OSS_CI, needs_cuda
 from PIL import __version__ as PILLOW_VERSION, Image, ImageOps, ImageSequence
+from torchvision._internally_replaced_utils import IN_FBCODE
 from torchvision.io.image import (
+    _decode_avif,
+    _decode_heic,
     decode_gif,
     decode_image,
     decode_jpeg,
     decode_png,
+    decode_webp,
     encode_jpeg,
     encode_png,
     ImageReadMode,
@@ -39,6 +44,19 @@ TOOSMALL_PNG = os.path.join(IMAGE_ROOT, "toosmall_png")
 IS_WINDOWS = sys.platform in ("win32", "cygwin")
 IS_MACOS = sys.platform == "darwin"
 PILLOW_VERSION = tuple(int(x) for x in PILLOW_VERSION.split("."))
+WEBP_TEST_IMAGES_DIR = os.environ.get("WEBP_TEST_IMAGES_DIR", "")
+
+# Hacky way of figuring out whether we compiled with libavif/libheif (those are
+# currenlty disabled by default)
+try:
+    _decode_avif(torch.arange(10, dtype=torch.uint8))
+except Exception as e:
+    DECODE_AVIF_ENABLED = "torchvision not compiled with libavif support" not in str(e)
+
+try:
+    _decode_heic(torch.arange(10, dtype=torch.uint8))
+except Exception as e:
+    DECODE_HEIC_ENABLED = "torchvision not compiled with libheif support" not in str(e)
 
 
 def _get_safe_image_name(name):
@@ -146,17 +164,6 @@ def test_invalid_exif(tmpdir, size):
     torch.testing.assert_close(expected, output)
 
 
-def test_decode_jpeg_errors():
-    with pytest.raises(RuntimeError, match="Expected a non empty 1-dimensional tensor"):
-        decode_jpeg(torch.empty((100, 1), dtype=torch.uint8))
-
-    with pytest.raises(RuntimeError, match="Expected a torch.uint8 tensor"):
-        decode_jpeg(torch.empty((100,), dtype=torch.float16))
-
-    with pytest.raises(RuntimeError, match="Not a JPEG file"):
-        decode_jpeg(torch.empty((100), dtype=torch.uint8))
-
-
 def test_decode_bad_huffman_images():
     # sanity check: make sure we can decode the bad Huffman encoding
     bad_huff = read_file(os.path.join(DAMAGED_JPEG, "bad_huffman.jpg"))
@@ -232,10 +239,6 @@ def test_decode_png(img_path, pil_mode, mode, scripted, decode_fun):
 
 
 def test_decode_png_errors():
-    with pytest.raises(RuntimeError, match="Expected a non empty 1-dimensional tensor"):
-        decode_png(torch.empty((), dtype=torch.uint8))
-    with pytest.raises(RuntimeError, match="Content is not png"):
-        decode_png(torch.randint(3, 5, (300,), dtype=torch.uint8))
     with pytest.raises(RuntimeError, match="Out of bound read in decode_png"):
         decode_png(read_file(os.path.join(DAMAGED_PNG, "sigsegv.png")))
     with pytest.raises(RuntimeError, match="Content is too small for png"):
@@ -413,23 +416,32 @@ def test_read_interlaced_png():
 
 
 @needs_cuda
-@pytest.mark.parametrize(
-    "img_path",
-    [pytest.param(jpeg_path, id=_get_safe_image_name(jpeg_path)) for jpeg_path in get_images(IMAGE_ROOT, ".jpg")],
-)
 @pytest.mark.parametrize("mode", [ImageReadMode.UNCHANGED, ImageReadMode.GRAY, ImageReadMode.RGB])
 @pytest.mark.parametrize("scripted", (False, True))
-def test_decode_jpeg_cuda(mode, img_path, scripted):
-    if "cmyk" in img_path:
-        pytest.xfail("Decoding a CMYK jpeg isn't supported")
+def test_decode_jpegs_cuda(mode, scripted):
+    encoded_images = []
+    for jpeg_path in get_images(IMAGE_ROOT, ".jpg"):
+        if "cmyk" in jpeg_path:
+            continue
+        encoded_image = read_file(jpeg_path)
+        encoded_images.append(encoded_image)
+    decoded_images_cpu = decode_jpeg(encoded_images, mode=mode)
+    decode_fn = torch.jit.script(decode_jpeg) if scripted else decode_jpeg
 
-    data = read_file(img_path)
-    img = decode_image(data, mode=mode)
-    f = torch.jit.script(decode_jpeg) if scripted else decode_jpeg
-    img_nvjpeg = f(data, mode=mode, device="cuda")
+    # test multithreaded decoding
+    # in the current version we prevent this by using a lock but we still want to test it
+    num_workers = 10
 
-    # Some difference expected between jpeg implementations
-    assert (img.float() - img_nvjpeg.cpu().float()).abs().mean() < 2
+    with concurrent.futures.ThreadPoolExecutor(max_workers=num_workers) as executor:
+        futures = [executor.submit(decode_fn, encoded_images, mode, "cuda") for _ in range(num_workers)]
+    decoded_images_threaded = [future.result() for future in futures]
+    assert len(decoded_images_threaded) == num_workers
+    for decoded_images in decoded_images_threaded:
+        assert len(decoded_images) == len(encoded_images)
+        for decoded_image_cuda, decoded_image_cpu in zip(decoded_images, decoded_images_cpu):
+            assert decoded_image_cuda.shape == decoded_image_cpu.shape
+            assert decoded_image_cuda.dtype == decoded_image_cpu.dtype == torch.uint8
+            assert (decoded_image_cuda.cpu().float() - decoded_image_cpu.cpu().float()).abs().mean() < 2
 
 
 @needs_cuda
@@ -440,12 +452,21 @@ def test_decode_image_cuda_raises():
 
 
 @needs_cuda
-@pytest.mark.parametrize("cuda_device", ("cuda", "cuda:0", torch.device("cuda")))
-def test_decode_jpeg_cuda_device_param(cuda_device):
-    """Make sure we can pass a string or a torch.device as device param"""
+def test_decode_jpeg_cuda_device_param():
     path = next(path for path in get_images(IMAGE_ROOT, ".jpg") if "cmyk" not in path)
     data = read_file(path)
-    decode_jpeg(data, device=cuda_device)
+    current_device = torch.cuda.current_device()
+    current_stream = torch.cuda.current_stream()
+    num_devices = torch.cuda.device_count()
+    devices = ["cuda", torch.device("cuda")] + [torch.device(f"cuda:{i}") for i in range(num_devices)]
+    results = []
+    for device in devices:
+        results.append(decode_jpeg(data, device=device))
+    assert len(results) == len(devices)
+    for result in results:
+        assert torch.all(result.cpu() == results[0].cpu())
+    assert current_device == torch.cuda.current_device()
+    assert current_stream == torch.cuda.current_stream()
 
 
 @needs_cuda
@@ -453,12 +474,73 @@ def test_decode_jpeg_cuda_errors():
     data = read_file(next(get_images(IMAGE_ROOT, ".jpg")))
     with pytest.raises(RuntimeError, match="Expected a non empty 1-dimensional tensor"):
         decode_jpeg(data.reshape(-1, 1), device="cuda")
-    with pytest.raises(RuntimeError, match="input tensor must be on CPU"):
+    with pytest.raises(ValueError, match="must be tensors"):
+        decode_jpeg([1, 2, 3])
+    with pytest.raises(ValueError, match="Input tensor must be a CPU tensor"):
         decode_jpeg(data.to("cuda"), device="cuda")
     with pytest.raises(RuntimeError, match="Expected a torch.uint8 tensor"):
         decode_jpeg(data.to(torch.float), device="cuda")
-    with pytest.raises(RuntimeError, match="Expected a cuda device"):
-        torch.ops.image.decode_jpeg_cuda(data, ImageReadMode.UNCHANGED.value, "cpu")
+    with pytest.raises(RuntimeError, match="Expected the device parameter to be a cuda device"):
+        torch.ops.image.decode_jpegs_cuda([data], ImageReadMode.UNCHANGED.value, "cpu")
+    with pytest.raises(ValueError, match="Input tensor must be a CPU tensor"):
+        decode_jpeg(
+            torch.empty((100,), dtype=torch.uint8, device="cuda"),
+        )
+    with pytest.raises(ValueError, match="Input list must contain tensors on CPU"):
+        decode_jpeg(
+            [
+                torch.empty((100,), dtype=torch.uint8, device="cuda"),
+                torch.empty((100,), dtype=torch.uint8, device="cuda"),
+            ]
+        )
+
+    with pytest.raises(ValueError, match="Input list must contain tensors on CPU"):
+        decode_jpeg(
+            [
+                torch.empty((100,), dtype=torch.uint8, device="cuda"),
+                torch.empty((100,), dtype=torch.uint8, device="cuda"),
+            ],
+            device="cuda",
+        )
+
+    with pytest.raises(ValueError, match="Input list must contain tensors on CPU"):
+        decode_jpeg(
+            [
+                torch.empty((100,), dtype=torch.uint8, device="cpu"),
+                torch.empty((100,), dtype=torch.uint8, device="cuda"),
+            ],
+            device="cuda",
+        )
+
+    with pytest.raises(RuntimeError, match="Expected a torch.uint8 tensor"):
+        decode_jpeg(
+            [
+                torch.empty((100,), dtype=torch.uint8),
+                torch.empty((100,), dtype=torch.float32),
+            ],
+            device="cuda",
+        )
+
+    with pytest.raises(RuntimeError, match="Expected a non empty 1-dimensional tensor"):
+        decode_jpeg(
+            [
+                torch.empty((100,), dtype=torch.uint8),
+                torch.empty((1, 100), dtype=torch.uint8),
+            ],
+            device="cuda",
+        )
+
+    with pytest.raises(RuntimeError, match="Error while decoding JPEG images"):
+        decode_jpeg(
+            [
+                torch.empty((100,), dtype=torch.uint8),
+                torch.empty((100,), dtype=torch.uint8),
+            ],
+            device="cuda",
+        )
+
+    with pytest.raises(ValueError, match="Input list must contain at least one element"):
+        decode_jpeg([], device="cuda")
 
 
 def test_encode_jpeg_errors():
@@ -515,12 +597,10 @@ def test_encode_jpeg_cuda_device_param():
     devices = ["cuda", torch.device("cuda")] + [torch.device(f"cuda:{i}") for i in range(num_devices)]
     results = []
     for device in devices:
-        print(f"python: device: {device}")
         results.append(encode_jpeg(data.to(device=device)))
     assert len(results) == len(devices)
     for result in results:
         assert torch.all(result.cpu() == results[0].cpu())
-
     assert current_device == torch.cuda.current_device()
     assert current_stream == torch.cuda.current_stream()
 
@@ -784,16 +864,226 @@ def test_decode_gif(tmpdir, name, scripted):
             torch.testing.assert_close(tv_frame, pil_frame, atol=0, rtol=0)
 
 
-def test_decode_gif_errors():
+decode_fun_and_match = [
+    (decode_png, "Content is not png"),
+    (decode_jpeg, "Not a JPEG file"),
+    (decode_gif, re.escape("DGifOpenFileName() failed - 103")),
+    (decode_webp, "WebPGetFeatures failed."),
+]
+if DECODE_AVIF_ENABLED:
+    decode_fun_and_match.append((_decode_avif, "BMFF parsing failed"))
+if DECODE_HEIC_ENABLED:
+    decode_fun_and_match.append((_decode_heic, "Invalid input: No 'ftyp' box"))
+
+
+@pytest.mark.parametrize("decode_fun, match", decode_fun_and_match)
+def test_decode_bad_encoded_data(decode_fun, match):
     encoded_data = torch.randint(0, 256, (100,), dtype=torch.uint8)
     with pytest.raises(RuntimeError, match="Input tensor must be 1-dimensional"):
-        decode_gif(encoded_data[None])
+        decode_fun(encoded_data[None])
     with pytest.raises(RuntimeError, match="Input tensor must have uint8 data type"):
-        decode_gif(encoded_data.float())
+        decode_fun(encoded_data.float())
     with pytest.raises(RuntimeError, match="Input tensor must be contiguous"):
-        decode_gif(encoded_data[::2])
-    with pytest.raises(RuntimeError, match=re.escape("DGifOpenFileName() failed - 103")):
-        decode_gif(encoded_data)
+        decode_fun(encoded_data[::2])
+    with pytest.raises(RuntimeError, match=match):
+        decode_fun(encoded_data)
+
+
+@pytest.mark.parametrize("decode_fun", (decode_webp, decode_image))
+@pytest.mark.parametrize("scripted", (False, True))
+def test_decode_webp(decode_fun, scripted):
+    encoded_bytes = read_file(next(get_images(FAKEDATA_DIR, ".webp")))
+    if scripted:
+        decode_fun = torch.jit.script(decode_fun)
+    img = decode_fun(encoded_bytes)
+    assert img.shape == (3, 100, 100)
+    assert img[None].is_contiguous(memory_format=torch.channels_last)
+    img += 123  # make sure image buffer wasn't freed by underlying decoding lib
+
+
+# This test is skipped by default because it requires webp images that we're not
+# including within the repo. The test images were downloaded manually from the
+# different pages of https://developers.google.com/speed/webp/gallery
+@pytest.mark.skipif(not WEBP_TEST_IMAGES_DIR, reason="WEBP_TEST_IMAGES_DIR is not set")
+@pytest.mark.parametrize("decode_fun", (decode_webp, decode_image))
+@pytest.mark.parametrize("scripted", (False, True))
+@pytest.mark.parametrize(
+    "mode, pil_mode",
+    (
+        # Note that converting an RGBA image to RGB leads to bad results because the
+        # transparent pixels aren't necessarily set to "black" or "white", they can be
+        # random stuff. This is consistent with PIL results.
+        (ImageReadMode.RGB, "RGB"),
+        (ImageReadMode.RGB_ALPHA, "RGBA"),
+        (ImageReadMode.UNCHANGED, None),
+    ),
+)
+@pytest.mark.parametrize("filename", Path(WEBP_TEST_IMAGES_DIR).glob("*.webp"), ids=lambda p: p.name)
+def test_decode_webp_against_pil(decode_fun, scripted, mode, pil_mode, filename):
+    encoded_bytes = read_file(filename)
+    if scripted:
+        decode_fun = torch.jit.script(decode_fun)
+    img = decode_fun(encoded_bytes, mode=mode)
+    assert img[None].is_contiguous(memory_format=torch.channels_last)
+
+    pil_img = Image.open(filename).convert(pil_mode)
+    from_pil = F.pil_to_tensor(pil_img)
+    assert_equal(img, from_pil)
+    img += 123  # make sure image buffer wasn't freed by underlying decoding lib
+
+
+@pytest.mark.skipif(not DECODE_AVIF_ENABLED, reason="AVIF support not enabled.")
+@pytest.mark.parametrize("decode_fun", (_decode_avif, decode_image))
+@pytest.mark.parametrize("scripted", (False, True))
+def test_decode_avif(decode_fun, scripted):
+    encoded_bytes = read_file(next(get_images(FAKEDATA_DIR, ".avif")))
+    if scripted:
+        decode_fun = torch.jit.script(decode_fun)
+    img = decode_fun(encoded_bytes)
+    assert img.shape == (3, 100, 100)
+    assert img[None].is_contiguous(memory_format=torch.channels_last)
+    img += 123  # make sure image buffer wasn't freed by underlying decoding lib
+
+
+# Note: decode_image fails because some of these files have a (valid) signature
+# we don't recognize. We should probably use libmagic....
+decode_funs = []
+if DECODE_AVIF_ENABLED:
+    decode_funs.append(_decode_avif)
+if DECODE_HEIC_ENABLED:
+    decode_funs.append(_decode_heic)
+
+
+@pytest.mark.skipif(not decode_funs, reason="Built without avif and heic support.")
+@pytest.mark.parametrize("decode_fun", decode_funs)
+@pytest.mark.parametrize("scripted", (False, True))
+@pytest.mark.parametrize(
+    "mode, pil_mode",
+    (
+        (ImageReadMode.RGB, "RGB"),
+        (ImageReadMode.RGB_ALPHA, "RGBA"),
+        (ImageReadMode.UNCHANGED, None),
+    ),
+)
+@pytest.mark.parametrize(
+    "filename", Path("/home/nicolashug/dev/libavif/tests/data/").glob("*.avif"), ids=lambda p: p.name
+)
+def test_decode_avif_heic_against_pil(decode_fun, scripted, mode, pil_mode, filename):
+    if "reversed_dimg_order" in str(filename):
+        # Pillow properly decodes this one, but we don't (order of parts of the
+        # image is wrong). This is due to a bug that was recently fixed in
+        # libavif. Hopefully this test will end up passing soon with a new
+        # libavif version https://github.com/AOMediaCodec/libavif/issues/2311
+        pytest.xfail()
+    import pillow_avif  # noqa
+
+    encoded_bytes = read_file(filename)
+    if scripted:
+        decode_fun = torch.jit.script(decode_fun)
+    try:
+        img = decode_fun(encoded_bytes, mode=mode)
+    except RuntimeError as e:
+        if any(
+            s in str(e)
+            for s in (
+                "BMFF parsing failed",
+                "avifDecoderParse failed: ",
+                "file contains more than one image",
+                "no 'ispe' property",
+                "'iref' has double references",
+                "Invalid image grid",
+            )
+        ):
+            pytest.skip(reason="Expected failure, that's OK")
+        else:
+            raise e
+    assert img[None].is_contiguous(memory_format=torch.channels_last)
+    if mode == ImageReadMode.RGB:
+        assert img.shape[0] == 3
+    if mode == ImageReadMode.RGB_ALPHA:
+        assert img.shape[0] == 4
+
+    if img.dtype == torch.uint16:
+        img = F.to_dtype(img, dtype=torch.uint8, scale=True)
+    try:
+        from_pil = F.pil_to_tensor(Image.open(filename).convert(pil_mode))
+    except RuntimeError as e:
+        if "Invalid image grid" in str(e):
+            pytest.skip(reason="PIL failure")
+        else:
+            raise e
+
+    if True:
+        from torchvision.utils import make_grid
+
+        g = make_grid([img, from_pil])
+        F.to_pil_image(g).save((f"/home/nicolashug/out_images/{filename.name}.{pil_mode}.png"))
+
+    is_decode_heic = getattr(decode_fun, "__name__", getattr(decode_fun, "name", None)) == "_decode_heic"
+    if mode == ImageReadMode.RGB and not is_decode_heic:
+        # We don't compare torchvision's AVIF against PIL for RGB because
+        # results look pretty different on RGBA images (other images are fine).
+        # The result on torchvision basically just plainly ignores the alpha
+        # channel, resuting in transparent pixels looking dark. PIL seems to be
+        # using a sort of k-nn thing (Take a look at the resuting images)
+        return
+    if filename.name == "sofa_grid1x5_420.avif" and is_decode_heic:
+        return
+
+    torch.testing.assert_close(img, from_pil, rtol=0, atol=3)
+
+
+@pytest.mark.skipif(not DECODE_HEIC_ENABLED, reason="HEIC support not enabled yet.")
+@pytest.mark.parametrize("decode_fun", (_decode_heic, decode_image))
+@pytest.mark.parametrize("scripted", (False, True))
+def test_decode_heic(decode_fun, scripted):
+    encoded_bytes = read_file(next(get_images(FAKEDATA_DIR, ".heic")))
+    if scripted:
+        decode_fun = torch.jit.script(decode_fun)
+    img = decode_fun(encoded_bytes)
+    assert img.shape == (3, 100, 100)
+    assert img[None].is_contiguous(memory_format=torch.channels_last)
+    img += 123  # make sure image buffer wasn't freed by underlying decoding lib
+
+
+@pytest.mark.parametrize("input_type", ("Path", "str", "tensor"))
+@pytest.mark.parametrize("scripted", (False, True))
+def test_decode_image_path(input_type, scripted):
+    # Check that decode_image can support not just tensors as input
+    path = next(get_images(IMAGE_ROOT, ".jpg"))
+    if input_type == "Path":
+        input = Path(path)
+    elif input_type == "str":
+        input = path
+    elif input_type == "tensor":
+        input = read_file(path)
+    else:
+        raise ValueError("Oops")
+
+    if scripted and input_type == "Path":
+        pytest.xfail(reason="Can't pass a Path when scripting")
+
+    decode_fun = torch.jit.script(decode_image) if scripted else decode_image
+    decode_fun(input)
+
+
+def test_mode_str():
+    # Make sure decode_image supports string modes. We just test decode_image,
+    # not all of the decoding functions, but they should all support that too.
+    # Torchscript fails when passing strings, which is expected.
+    path = next(get_images(IMAGE_ROOT, ".png"))
+    assert decode_image(path, mode="RGB").shape[0] == 3
+    assert decode_image(path, mode="rGb").shape[0] == 3
+    assert decode_image(path, mode="GRAY").shape[0] == 1
+    assert decode_image(path, mode="RGBA").shape[0] == 4
+
+
+def test_avif_heic_fbcode():
+    cm = nullcontext() if IN_FBCODE else pytest.raises(ImportError, match="cannot import")
+    with cm:
+        from torchvision.io import decode_heic  # noqa
+    with cm:
+        from torchvision.io import decode_avif  # noqa
 
 
 if __name__ == "__main__":
